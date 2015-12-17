@@ -1,0 +1,275 @@
+---
+title: "dplyr and broom"
+author: "Isaac Jenkins"
+date: "December 18, 2015"
+output: 
+  ioslides_presentation:
+    smaller: true
+---
+
+```{r, echo = FALSE, results = 'hide', message = FALSE}
+library(Lahman)
+library(dplyr)
+library(broom)
+library(ggplot2)
+```
+
+
+## Fast and Clean
+
+### Do stuff faster (and cleaner?) with [dplyr](https://cran.r-project.org/web/packages/dplyr/vignettes/introduction.html)
+
+### Do stuff cleaner (and faster?) with [broom](https://cran.r-project.org/web/packages/broom/vignettes/broom.html)
+
+## dplyr
+
+```{r, echo = FALSE, results = 'markup'}
+knitr::kable(data_frame(Function = c("`select()`", "`filter()`", "`mutate()`", "`summarise()`", "`group_by()`", "`left_join()`"),
+                        Action = c("Select colums", "Filter rows", "Add columns", 
+                                   "Summarize columns", "Perform grouped operations", "SQL-like join operations")))
+```
+
+## broom
+
+```{r, echo = FALSE, results = 'markup'}
+knitr::kable(data_frame(Function = c("`tidy()`", "`glance()`", "`augment()`"),
+                        Action = c("Summarize model findings (like `summary()`)", 
+                                   "Concise *one-row* model summary", 
+                                   "Add columns to modeled data (like `predict()`)")))
+```
+
+## Other Packages (used today)
+
+- [Lahman](https://cran.r-project.org/web/packages/Lahman/index.html)
+- [ggplot2](https://cran.r-project.org/web/packages/ggplot2/index.html)
+- [magrittr](https://cran.r-project.org/web/packages/magrittr/vignettes/magrittr.html)
+
+## The Pipe
+
+![](https://upload.wikimedia.org/wikipedia/en/b/b9/MagrittePipe.jpg)
+
+## The Pipe Operator
+
+![](https://raw.githubusercontent.com/smbache/magrittr/master/inst/logo.png)
+
+### The Basics:
+
+- `x %>% f` is the same as `f(x)`
+- `x %>% f(y, .)` is the same as `f(y, x)`
+
+## A Data Question
+
+> Can you name the baseball players with 4 letters or fewer in their last names who have
+> hit 40 or more home runs in a season? (source: [Sporcle](http://www.sporcle.com/games/deej/40hr4letters))
+
+![alt text](https://upload.wikimedia.org/wikipedia/commons/thumb/1/13/Babe_Ruth2.jpg/182px-Babe_Ruth2.jpg)
+
+## Knowing Your Data (with Mark McGwire)
+
+```{r}
+Batting %>% 
+  filter(playerID == "mcgwima01") %>% 
+  select(playerID, teamID, yearID, HR) %>% 
+  filter(yearID == 1997)
+```
+
+## Knowing Your Data (with Mark McGwire)
+
+```{r}
+Batting %>% 
+  filter(playerID == "mcgwima01") %>% 
+  group_by(playerID, yearID) %>% 
+  summarise(HR = sum(HR)) %>% 
+  filter(yearID == 1997)
+```
+
+## Home Run Data
+
+```{r}
+hr <- Batting %>% 
+  group_by(playerID, yearID) %>% 
+  summarise(HR = sum(HR)) %>%  
+  ungroup %>% 
+  filter(HR >= 40) %>% 
+  group_by(playerID) %>% 
+  summarise(seasons = n(),
+            last_year = max(yearID)) %>% 
+  arrange(desc(seasons))
+```
+```{r, echo = FALSE}
+hr
+```
+
+
+## Player Name Data
+
+```{r}
+players <- Master %>% 
+  tbl_df %>% 
+  select(playerID, nameFirst, nameLast) %>% 
+  mutate(letters_last = nchar(nameLast))
+```
+```{r, echo = FALSE}
+players
+```
+
+## The Solution
+
+```{r}
+hr %>% 
+  left_join(players, by = "playerID")  %>% 
+  filter(letters_last <= 4)
+```
+
+## Another Data Question
+
+What is the relationship between a baseball team's yearly player salaries
+and the team's winning percentage?
+
+![alt text](https://upload.wikimedia.org/wikipedia/commons/thumb/2/2a/Clayton_Kershaw_on_May_20%2C_2015.jpg/285px-Clayton_Kershaw_on_May_20%2C_2015.jpg)
+
+## Team Salaries vs. Win Percentage
+
+### Salaries (in millions)
+```{r}
+money <- Salaries %>% 
+  group_by(yearID, teamID) %>% 
+  summarise(total_salary = sum(salary) / 1000000)
+```
+```{r, echo = FALSE}
+money
+```
+
+
+## Team Salaries vs. Win Percentage
+
+### Winning percentage
+```{r, warning = FALSE}
+wins <- Teams %>% 
+  tbl_df %>% 
+  filter(yearID >= 1985) %>% 
+  mutate(win_pct = W / (W + L) * 100) %>% 
+  select(yearID, teamID, win_pct, LgWin, WSWin) %>% 
+  left_join(money, by = c("yearID", "teamID"))
+```
+```{r, echo = FALSE}
+wins
+```
+
+## Team Salaries vs. Win Percentage
+
+```{r, echo = FALSE, fig.width = 8, fig.height = 5, fig.align = "center", dev = "svg"}
+## Yearly plots
+wins %>% 
+  filter(yearID <= 1999) %>% 
+  mutate(LgWin = ifelse(is.na(LgWin), "N", LgWin),
+         WSWin = ifelse(is.na(WSWin), "N", WSWin)) %>% 
+  ggplot(aes(total_salary, win_pct)) +
+  facet_wrap(~yearID, scales = "free_x", nr = 3) +
+  geom_point(aes(color = LgWin, shape = WSWin), alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  ylab("Win Percentage") +
+  xlab("Total Team Salary (in millons)") +
+  scale_color_manual(name = "League Champ", values = c("black", "red")) +
+  scale_shape_discrete(name = "World Series Champ") +
+  theme(legend.position = "top",
+        legend.box = "horizontal",
+        axis.text.x = element_text(size = 8))
+```
+
+## Team Salaries vs. Win Percentage
+
+```{r, echo = FALSE, fig.width = 8, fig.height = 5, fig.align = "center", dev = "svg"}
+## Yearly plots
+wins %>% 
+  filter( yearID >= 2000) %>% 
+  mutate(LgWin = ifelse(is.na(LgWin), "N", LgWin),
+         WSWin = ifelse(is.na(WSWin), "N", WSWin)) %>% 
+  ggplot(aes(total_salary, win_pct)) +
+  facet_wrap(~yearID, scales = "free_x", nr = 3) +
+  geom_point(aes(color = LgWin, shape = WSWin), alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  ylab("Win Percentage") +
+  xlab("Total Team Salary (in millons)") +
+  scale_color_manual(name = "League Champ", values = c("black", "red")) +
+  scale_shape_discrete(name = "World Series Champ") +
+  theme(legend.position = "top",
+        legend.box = "horizontal",
+        axis.text.x = element_text(size = 8))
+```
+
+## Summarize the (2014) Model
+
+The model
+
+```{r}
+m1 <- lm(win_pct ~ total_salary, data = filter(wins, yearID == 2014))
+m1
+```
+
+## Summarize the (2014) Model
+
+**Without** broom
+
+```{r}
+summary(m1)
+```
+
+## Summarize the (2014) Model
+
+**Without** broom
+
+```{r}
+summary(m1)$coefficients["total_salary", "Pr(>|t|)"]
+```
+
+## Summarize the (2014) Model
+
+**With** broom
+
+```{r}
+tidy(m1)
+```
+
+## Test ALL the Model Slopes
+
+**Without** broom
+
+```{r}
+sapply(split(wins, wins$yearID), function(x) {
+  mm <- lm(win_pct ~ total_salary, data = x)
+  summary(mm)$coefficients["total_salary", "Pr(>|t|)"]
+})
+```
+
+## Test ALL the Model Slopes
+
+**With** broom
+
+```{r}
+wins %>% 
+  group_by(yearID) %>% 
+  do(tidy(lm(win_pct ~ total_salary, data = .))) %>% 
+  filter(term == "total_salary")
+```
+
+## Thank you
+
+![](http://www.totalprosports.com/wp-content/uploads/2012/10/rickey-henderson-seattle-pinch-hit-postseason.jpeg)
+
+> "Lou Brock was the symbol of great base stealing. But today, I'm the greatest
+> of all time. Thank you."
+> ~ Rickey Henderson
+
+## Many thanks to...
+
+- Hadley Wickham (dplyr, ggplot2)
+- David Robinson (broom) [not the Admiral]
+- Stefan Milton Bache (magrittr)
+- Yihui Xie (knitr)
+- JJ Allaire (rmarkdown)
+- Sean Lahman and Michael Friendly (Lahman)
+- and others that contributed to the R packages used today
+
+Lastly, thank you to Ben Baumer for laying out an excellent way to 
+introduce dplyr (which I shamelessly stole from [here](http://www.science.smith.edu/~bbaumer/jsm2015.html#1)).
